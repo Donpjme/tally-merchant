@@ -1,133 +1,80 @@
+// app/[domain]/page.tsx
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { notFound } from 'next/navigation'
+import Link from 'next/link'
 import Image from 'next/image'
-import { AddToCartButton } from './add-to-cart'
-import { type Metadata } from 'next'
+import { Package } from 'lucide-react'
 
-export async function generateMetadata({ params }: { params: Promise<{ domain: string }> }): Promise<Metadata> {
+export default async function StorefrontPage({ params }: { params: Promise<{ domain: string }> }) {
   const { domain } = await params
-  const cookieStore = await cookies()
+  const subdomain = domain.split('.')[0].toLowerCase().trim() 
 
+  const cookieStore = await cookies()
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        get(name: string) {
-          return cookieStore.get(name)?.value
-        },
-      },
-    }
+    { cookies: { get(name) { return cookieStore.get(name)?.value } } }
   )
 
   const { data: store } = await supabase
     .from('stores')
-    .select('name')
-    .eq('slug', domain)
-    .single()
-
-  if (!store) {
-    return {
-      title: 'Store Not Found',
-    }
-  }
-
-  return {
-    title: store.name,
-    description: `Welcome to ${store.name}. Browse our collection of products.`,
-    openGraph: {
-      title: store.name,
-      description: `Welcome to ${store.name}. Browse our collection of products.`,
-    },
-  }
-}
-
-export default async function ProductPage({ params }: { params: Promise<{ domain: string; slug: string }> }) {
-  const { domain, slug } = await params
-  const cookieStore = await cookies()
-
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        get(name: string) {
-          return cookieStore.get(name)?.value
-        },
-      },
-    }
-  )
-
-  // 1. Get Store
-  const { data: store } = await supabase
-    .from('stores')
-    .select('id, name')
-    .eq('slug', domain)
+    .select('id, name, description, currency')
+    .eq('slug', subdomain)
     .single()
 
   if (!store) return notFound()
 
-  // 2. Get Product by Slug
-  const { data: product } = await supabase
+  const { data: products } = await supabase
     .from('products')
     .select('*')
-    .eq('slug', slug)
     .eq('store_id', store.id)
-    .single()
-
-  if (!product) return notFound()
+    .eq('status', 'active') 
+    .order('created_at', { ascending: false })
 
   return (
-    <div className="bg-white">
-      <div className="mx-auto max-w-2xl px-4 py-16 sm:px-6 sm:py-24 lg:grid lg:max-w-7xl lg:grid-cols-2 lg:gap-x-8 lg:px-8">
-        {/* Product Image */}
-        <div className="lg:max-w-lg lg:self-end">
-          <div className="aspect-h-1 aspect-w-1 overflow-hidden rounded-lg bg-gray-100">
-            {product.images && product.images[0] ? (
-              <Image
-                src={product.images[0]}
-                alt={product.name}
-                width={500}
-                height={500}
-                className="h-full w-full object-cover object-center"
-              />
-            ) : (
-              <div className="flex h-full w-full items-center justify-center text-gray-400">
-                No Image
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Product Details */}
-        <div className="mt-10 px-4 sm:mt-16 sm:px-0 lg:mt-0">
-          <h1 className="text-3xl font-bold tracking-tight text-gray-900">{product.name}</h1>
-          
-          <div className="mt-3">
-            <h2 className="sr-only">Product information</h2>
-            <p className="text-3xl tracking-tight text-gray-900">
-              {new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN' }).format(product.price)}
-            </p>
-            {product.compare_at_price && (
-               <p className="text-lg text-gray-500 line-through">
-                 {new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN' }).format(product.compare_at_price)}
-               </p>
-            )}
-          </div>
-
-          <div className="mt-6">
-            <h3 className="sr-only">Description</h3>
-            <div className="space-y-6 text-base text-gray-700">
-              <p>{product.description}</p>
-            </div>
-          </div>
-
-          <div className="mt-10">
-             <AddToCartButton storeId={store.id} productId={product.id} />
-          </div>
+    <>
+      {/* HERO SECTION */}
+      <div className="relative bg-slate-50 border-b border-slate-100 py-20">
+        <div className="mx-auto max-w-7xl px-4 text-center sm:px-6 lg:px-8">
+          <h1 className="text-5xl font-black tracking-tight text-slate-900 sm:text-6xl">
+            {store.name}
+          </h1>
+          <p className="mx-auto mt-6 max-w-2xl text-lg text-slate-500 leading-relaxed">
+            {store.description || "Welcome to our store. Discover our latest arrivals."}
+          </p>
         </div>
       </div>
-    </div>
+
+      {/* PRODUCT GRID */}
+      <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
+        {!products?.length ? (
+          <div className="flex flex-col items-center justify-center py-20 text-center">
+            <Package size={64} className="text-slate-300" />
+            <h3 className="mt-4 text-lg font-bold">No products found</h3>
+            {/* Linter Fix: We use &apos; here */}
+            <p className="text-slate-500">We&apos;re currently updating our shelves.</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 gap-12 sm:grid-cols-2 lg:grid-cols-4">
+            {products.map((p) => (
+              <Link key={p.id} href={`/products/${p.id}`} className="group">
+                <div className="aspect-square relative overflow-hidden rounded-2xl border bg-slate-50">
+                  {p.images?.[0] ? (
+                    <Image src={p.images[0]} alt={p.name} fill className="object-cover group-hover:scale-110 transition-transform duration-500" />
+                  ) : (
+                    <div className="flex h-full w-full items-center justify-center text-slate-200"><Package size={48} /></div>
+                  )}
+                </div>
+                <h3 className="mt-4 font-bold text-slate-900">{p.name}</h3>
+                <p className="mt-1 text-lg font-black text-indigo-600">
+                  {new Intl.NumberFormat('en-NG', { style: 'currency', currency: store.currency || 'NGN' }).format(p.price)}
+                </p>
+              </Link>
+            ))}
+          </div>
+        )}
+      </div>
+    </>
   )
 }
